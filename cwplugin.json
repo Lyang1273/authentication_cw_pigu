@@ -1,0 +1,13 @@
+{
+  "id": "authentication.lyang1273",
+  "name": "Authentication",
+  "version": "1.0.0",
+  "api_version": ">=0.7.0",
+  "entry": "main.py",
+  "author": "Lyang1273",
+  "description": "A Class Widgets plugin.",
+  "url": "https://github.com/Lyang1273/authentication_cw_pigu",
+  "readme": "README.md",
+  "icon": "icon.png",
+  "tag_ids": []
+}

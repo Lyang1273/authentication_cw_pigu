@@ -1,0 +1,18 @@
+[project]
+name = "authentication-lyang1273"
+version = "1.0.0"
+description = "A Class Widgets plugin."
+authors = [
+    {name = "Lyang1273"},
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "winrt-runtime>=3.2.1,<4; sys_platform == 'win32'",
+    "winrt-Windows.Foundation>=3.2.1,<4; sys_platform == 'win32'",
+    "winrt-Windows.Security.Credentials.UI>=3.2.1,<4; sys_platform == 'win32'",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
