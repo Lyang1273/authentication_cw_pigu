@@ -12,60 +12,96 @@
 </div>
 
 > [!NOTE]
-> 
-> 该模板为自动生成 / This README is automatically generated.
+>
+> - 本插件仅支持 Windows（Windows Hello 依赖 WinRT）
+> - 插件会以 monkey patch 方式挂钩宿主入口，属实验性质；卸载本插件即可完全还原钩子
 
 ## 介绍 / Introduction
-本插件为 Class Widgets 2 提供密码与 Windows Hello 身份验证。密码以 PBKDF2-HMAC-SHA256 哈希保存，不存储明文。RinUI 设置页可添加/移除认证方式，并配置验证触发时机；认证操作通过独立的认证窗口完成。
+
+本插件为 Class Widgets 2 提供密码与 Windows Hello 身份验证。密码以 PBKDF2-HMAC-SHA256 哈希保存，不存储明文。RinUI 设置页可添加/移除认证方式，并配置验证触发时机；认证通过全屏模态的 RinUI Dialog 完成。
 
 本插件基于 [Class Widgets 2 SDK](https://github.com/Class-Widgets/class-widgets-sdk)。
 
+### 功能 / Features
+
+- **认证方式**
+  - **密码**：本地 PBKDF2-HMAC-SHA256（310000 迭代 + 随机盐）哈希存储
+  - **Windows Hello**：使用系统原生 PIN/生物识别弹窗（需设备已配置 Windows Hello）
+  - 同时启用多种方式时，先弹出选择窗口，任一通过即可
+- **认证界面**
+  - 全屏半透明载体窗口 + 居中 RinUI Dialog（全屏变暗遮罩，防绕过点击）
+  - 密码错误时红字提示、清空重试
+  - 取消认证即视为拒绝该操作
+- **验证触发时机**（可在设置页逐项开关）
+  - 程序启动（取消直接退出程序）
+  - 打开设置 / 打开课程编辑器
+  - 插件的安装、卸载、导入、更新、启停
+  - 退出或重启程序
+- **设置页**：仿 Windows「登录选项」风格，方式卡片 + 触发时机开关，支持在页内添加/更改/移除密码
+
+### 工作原理
+
+宿主没有公开的操作拦截 API。插件以**可逆的 monkey patch** 挂钩已识别的宿主入口（如 `AppWindowManager.open/open_settings/open_editor`、`PluginManager.uninstallPlugin/setPluginEnabled`、`UpdaterBridge.startInstall`、`AppCentral.quit/restart`）：
+
+- 每次拦截先弹认证，通过后才继续原始调用；拒绝则取消操作并保留状态
+- 同类操作的 3 秒内重复触发自动放行（同一链路多次调用去重），认证弹窗存在期间的新请求一律拒绝
+- Windows Hello 调用在独立线程执行，主线程保持消息泵，不会出现「未响应」
+- 所有认证 UI 由 RinUI 提供，不使用原生 Qt 对话框
+
+### 兼容性说明
+
+- 只有插件能够识别的入口会被挂钩；若宿主版本改变了入口方法，对应触发项会失效，日志中会记录「no host hook was installed」
+- Windows Hello 仅限 Windows 平台，且依赖宿主运行 Python 3.12（winrt 组件会随插件打包）
 
 ## 使用 / Usage
-1. 在插件广场（网页版/客户端）中 [下载](https://plaza.cw.rinlit.cn/plugins/authentication.lyang1273)  /  
-In Plugin Plaza (Web / Class Widgets Client), [download](https://plaza.cw.rinlit.cn/plugins/authentication.lyang1273) this plugin
 
-2. 在 Class Widgets 2 -> "设置" -> "插件"中导入且启用本插件  /  
-Import and enable this plugin in "Settings" -> "Plugins" in Class Widgets 2
+1. 在插件广场（网页版/客户端）中 [下载](https://plaza.cw.rinlit.cn/plugins/authentication.lyang1273) / In Plugin Plaza (Web / Class Widgets Client), [download](https://plaza.cw.rinlit.cn/plugins/authentication.lyang1273) this plugin
 
-3. 在插件的“身份验证”设置页添加密码或 Windows Hello 认证方式，再启用需要验证的触发项。Windows Hello 依赖 Windows 支持及 `winrt` 运行时组件。
+2. 在 Class Widgets 2 ->「设置」->「插件」中导入并启用本插件 / Import and enable this plugin in "Settings" -> "Plugins"
 
-> 插件通过 monkey patch 挂钩 Class Widgets 内部操作入口。由于宿主没有公开的操作拦截 API，插件会按已识别的入口方法进行拦截；若当前宿主版本入口发生变化，会显示兼容性提示。插件设置页和密码管理仍可使用。
+3. 在插件的「登录选项」设置页中：
+   - 添加密码或 Windows Hello 认证方式（首次添加密码时设置并确认密码）
+   - 打开需要验证的触发项（至少启用一项）
 
-## 项目结构
-- `main.py`：SDK 插件入口和宿主生命周期接线
-- `authentication/config.py`：设置读取与原子写入
-- `authentication/credentials.py`：密码哈希和 Windows Hello
-- `authentication/patches.py`：可恢复的猴子补丁
-- `authentication/ui.py`：独立认证窗口
-- `ui/Settings.qml`：插件设置页
+> **注意**
+> - 无法拦截对**本插件自身**的启用/禁用/卸载（自身被停用后钩子已摘除）
+> - 关闭「程序启动验证」后重启即可清除启动验证
+> - 认证数据保存在 `配置目录/plugins/authentication.lyang1273.json`（`password_salt`/`password_hash`/`iterations`/`auth_methods`/`events`），删除该文件即可重置插件
+> - Windows Hello 不可用时设置页会显示「此选项当前不可用」，不影响密码方式
 
-## 自动发布 / Auto Release
-通过 GitHub Actions 实现自动发布功能，推送 tag 时自动生成 release。
-#
-当前项目已自动配置了 `release.yml` 工作流，您只需要知道如何使用：
+## 构建 / Packaging
 
-1. 推送版本号 tag 到 GitHub（格式：`v*.*.*` ）：
-```bash
-git tag v1.0.0  # 版本号格式：`v*.*.*` (您也可以手动修改工作流中的格式)
-git push origin v1.0.0  # 推送
+```
+cd authentication_cw_pigu
+pip install Class-Widgets-SDK
+cw-plugin-pack        # 在源目录打包，生成 authentication.lyang1273.cwplugin
 ```
 
-2. 在 [GitHub 仓库](https://github.com/Lyang1273/authentication_cw_pigu) 设置中添加 `CWPT_TOKEN` 密钥（从 [插件广场控制台](https://plaza.cw.rinlit.cn/console) 获取的发布令牌）
+打包会依据 `pyproject.toml` 的 `project.dependencies` 自动将 winrt 组件安装进 `libs/`，宿主加载插件时会把 `libs/` 加入 `sys.path`。产物可直接通过宿主「插件 → 导入插件」安装。
 
-3. GitHub Actions 会自动：
-   - 使用 `cw-plugin-pack` 打包插件
-   - 生成 `.cwplugin` 和 `.zip` 两种格式
-   - 通过 `cw-plugin-publish` 自动发布到插件广场
-   - 创建 GitHub Release 并上传发布包
+## 排错 / Logging
 
-4. 即可在 GitHub Release 页面下载发布包，或直接在 Class Widgets 插件广场中安装
+宿主日志位于 `日志` 目录。相关关键字：
+
+| 日志内容 | 含义 |
+| --- | --- |
+| `Windows Hello availability: ...` | 启动时 Hello 可用性诊断 |
+| `Windows Hello call failed: ...` | WinRT 调用失败原因 |
+| `Authentication hook fired: event=... method=...` | 拦截已触发 |
+| `Hooked targets for event toggle state: ...` | 实际挂钩的宿主入口列表 |
+| `no host hook was installed` | 触发项已启用但未找到可拦截入口（宿主兼容问题） |
+
 
 
 ## 致谢 / Acknowledgements
+
 ### 引用资源 / Credits
-- [Class Widgets 2](https://github.com/rinlit-233-shiroko/class-widgets-2)
-- [Class Widgets 2 SDK](https://github.com/Class-Widgets/class-widgets-sdk)
+
+- [Class Widgets 2](https://github.com/rinlit-233-shiroko/class-widgets-2) — 插件宿主与 SDK 设计
+- [Class Widgets 2 SDK](https://github.com/Class-Widgets/class-widgets-sdk) — 插件 API、打包工具链
+- [RinUI](https://github.com/rinlit-233-shiroko/RinUI) — 全部认证 / 设置界面组件（Fluent 风格 Dialog、SettingCard 等）
+- [pywinrt / winrt-runtime](https://github.com/pywinrt/pywinrt) — Windows Hello（绑定 `Windows.Security.Credentials.UI`）
+- hashlib / hmac / secrets（Python 标准库）— PBKDF2-HMAC-SHA256 密码哈希
 
 ### 贡献者们 / Contributors
 [![Contributors](http://contrib.nn.ci/api?repo=Lyang1273/authentication_cw_pigu)](https://github.com/Lyang1273/authentication_cw_pigu/graphs/contributors)
