@@ -1,28 +1,54 @@
-import QtQuick 2.15
-import QtQuick.Window as QQW
+import QtQuick
 import QtQuick.Controls as QQC2
-import QtQuick.Layouts 2.15
+import QtQuick.Layouts
+import QtQuick.Window as QQW
 import RinUI
 
-// Transparent carrier window so the RinUI Dialog and its dimmed overlay
-// cover the whole screen (host's CheckSingleInstanceDialog pattern).
 QQW.Window {
     id: carrier
     visible: true
-    width: Screen.width
-    height: Screen.height
+
+    // 恢复全屏透明载体（最稳定的遮罩方案）
+    width: QQW.Screen.width
+    height: QQW.Screen.height + 1
     color: "transparent"
-    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.WA_TranslucentBackground
+    // 移除 Qt.Tool，仅保留置顶和无边框
+    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
     modality: Qt.ApplicationModal
 
     property string errorMessage: ""
     property bool revealPassword: false
-    // echoMode enums: RinUI shadows QtQuick's TextInput type, so use numeric values.
+    property bool submitted: false
     property int echoNormal: 0
     property int echoPassword: 2
 
-    // RinUI Dialog 的 Overlay.modal 雾化遮罩在半透明窗口上不渲染，
-    // 因此这里自行绘制全屏变暗背景。
+    property string dialogIcon: (typeof authDialogIcon !== "undefined" && authDialogIcon !== "") ? authDialogIcon : "ic_fluent_person_key_20_filled"
+    property string dialogIconColor: typeof authDialogIconColor !== "undefined" ? authDialogIconColor : ""
+
+    function hasAuthContext() {
+        return typeof authContext !== "undefined" && authContext !== null
+    }
+
+    function submitAuth(text) {
+        if (!carrier.hasAuthContext())
+            return
+        carrier.submitted = true
+        authContext.accept(text)
+    }
+
+    function cancelAuth() {
+        if (!carrier.hasAuthContext())
+            return
+        authContext.cancel()
+    }
+
+    function showFeedback(message) {
+        passwordInput.text = ""
+        carrier.errorMessage = message
+        passwordInput.forceActiveFocus()
+    }
+
+    // 自绘全屏变暗背景，避免原生 Overlay 不生效
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.55)
@@ -33,39 +59,53 @@ QQW.Window {
         }
     }
 
-    function showFeedback(message) {
-        carrier.errorMessage = message
-        passwordInput.text = ""
-        passwordInput.forceActiveFocus()
-    }
-
     Connections {
         target: typeof authContext !== "undefined" ? authContext : null
-        function onFeedback(message) {
-            carrier.showFeedback(message)
-        }
+        function onFeedback(message) { carrier.showFeedback(message) }
     }
 
     Dialog {
         id: authDialog
-        width: Screen.width * 0.22
+        width: Math.max(360, QQW.Screen.width * 0.22)
         title: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("确保那是你")
-
-        QQC2.Overlay.modal: Rectangle {
-            color: Qt.rgba(0, 0, 0, 0.55)
-        }
-
-        Text {
-            Layout.fillWidth: true
-            typography: Typography.Body
-            text: typeof authPrompt !== "undefined" ? authPrompt : qsTr("验证你的身份以继续使用 Class Widgets。")
-            wrapMode: Text.WordWrap
-            color: Theme.currentTheme.colors.textSecondaryColor
-        }
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
+            Icon {
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: 42; Layout.preferredHeight: 42; size: 42
+                name: carrier.dialogIcon
+                color: carrier.dialogIconColor !== "" ? carrier.dialogIconColor : Theme.currentTheme.colors.textSecondaryColor
+            }
+            Text {
+                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                typography: Typography.Body
+                text: typeof authPrompt !== "undefined" ? authPrompt : qsTr("验证你的身份以继续使用 Class Widgets。")
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8 // 稍微调小间距，让图标和输入框显得紧凑
+
+            // 触摸键盘图标按钮
+            Button {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 32
+                icon.name: "ic_fluent_keyboard_20_regular"
+                flat: true // 设为扁平，去掉默认背景
+                onClicked: {
+                    // 1. 先让输入框获取焦点
+                    passwordInput.forceActiveFocus()
+                    // 2. 调用 Python 后端拉起 Windows 触摸键盘
+                    if (carrier.hasAuthContext() && typeof authContext.show_keyboard !== "undefined") {
+                        authContext.show_keyboard()
+                    }
+                }
+            }
 
             TextField {
                 id: passwordInput
@@ -75,7 +115,7 @@ QQW.Window {
                 clearEnabled: false
                 onTextChanged: carrier.errorMessage = ""
                 onActiveFocusChanged: if (activeFocus) selectAll()
-                onAccepted: authContext.accept(text)
+                onAccepted: carrier.submitAuth(text)
             }
 
             CheckBox {
@@ -97,27 +137,19 @@ QQW.Window {
 
         footer: DialogButtonBox {
             padding: 15
-
+            Button { text: qsTr("取消"); Layout.fillWidth: true; onClicked: carrier.cancelAuth() }
             Button {
-                text: qsTr("取消")
-                Layout.preferredWidth: parent.width * 0.5
-                onClicked: authContext.cancel()
-            }
-
-            Button {
-                id: okButton
                 text: typeof authSubmitLabel !== "undefined" ? authSubmitLabel : qsTr("确定")
-                highlighted: true
-                Layout.preferredWidth: parent.width * 0.5
-                onClicked: authContext.accept(passwordInput.text)
+                highlighted: true; Layout.fillWidth: true
+                onClicked: carrier.submitAuth(passwordInput.text)
             }
         }
 
-        onClosed: authContext.cancel()
+        onClosed: { if (!carrier.submitted) carrier.cancelAuth() }
+    }
 
-        Component.onCompleted: {
-            passwordInput.forceActiveFocus()
-            authDialog.open()
-        }
+    Component.onCompleted: {
+        passwordInput.forceActiveFocus()
+        authDialog.open()
     }
 }

@@ -136,9 +136,8 @@ class Plugin(CW2Plugin):
         and idempotent; missing methods are reported instead of silently claiming
         that a trigger is protected.
         """
-        candidates = {
-            "settings": (("src.core.windows.manager", "AppWindowManager", ("open_settings", "open")),),
-            "course_editor": (("src.core.windows.manager", "AppWindowManager", ("open_editor", "open")),),
+        window_names = (("src.core.windows.manager", "AppWindowManager"),)
+        candidates: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
             "install_uninstall": (("src.core.plugin.manager", "PluginManager",
                                    ("uninstallPlugin", "importPlugin", "importPluginWithPath",
                                     "installFromPlaza", "installPlazaUpdate", "setPluginEnabled")),),
@@ -147,6 +146,19 @@ class Plugin(CW2Plugin):
         }
         import importlib
         patched_before = len(self.patches._originals)
+        for module_name, class_name in window_names:
+            try:
+                owner = getattr(importlib.import_module(module_name), class_name)
+            except (ImportError, AttributeError):
+                logger.debug("Hook target not available: {}.{}", module_name, class_name)
+                continue
+            # 通用的 open(name) 统一挂在 AppWindowManager.open 上：钩子按窗口名
+            # （settings / editor）查表，只有对应事件（settings 或 course_editor）
+            # 启用时才验证，其他窗口（如插件广场）直接放行，避免事件互相串扰。
+            # 不单独钩 open_settings/open_editor，因为它们在内部仍调用 open()，
+            # 由统一钩子覆盖，且 3 秒同事件去重可消化重入。
+            if self.patches.wrap(owner, "open", self._host_before_window_open):
+                logger.info("Installed window-name filter authentication hook: AppWindowManager.open")
         for event, targets in candidates.items():
             if not self.settings.data["events"].get(event):
                 continue
@@ -165,8 +177,6 @@ class Plugin(CW2Plugin):
         # actual manager instance as well, so bound Qt-slot aliases are covered.
         app = getattr(self.api, "_app", None)
         direct_targets = (
-            ("settings", getattr(getattr(app, "window_manager", None), "__class__", None), ("open_settings", "open")),
-            ("course_editor", getattr(getattr(app, "window_manager", None), "__class__", None), ("open_editor", "open")),
             ("install_uninstall", getattr(getattr(app, "plugin_manager", None), "__class__", None),
              ("uninstallPlugin", "importPlugin", "importPluginWithPath",
               "installFromPlaza", "installPlazaUpdate", "setPluginEnabled")),
@@ -220,15 +230,24 @@ class Plugin(CW2Plugin):
         "editor": "course_editor",
     }
 
-    def _before_window_open(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool:
+    def _host_before_window_open(self, *args: Any, **kwargs: Any) -> bool:
+        """Guard for the generic AppWindowManager.open(name) entry point.
+
+        The hook wraps the class-level method, so the first positional argument
+        is the manager instance itself; the window name is the second one.
+        Only requires authentication when the target window's event is enabled,
+        so plugin_plaza or any other window passes through untouched.
+        """
         name = args[1] if len(args) > 1 else kwargs.get("name")
         event = self._WINDOW_NAME_EVENTS.get(name)
         if event is None or not self.settings.data["events"].get(event):
             return True
-        return self._host_before(event, "open", args[1:], kwargs)  # type: ignore[arg-type]
+        return self._host_before(event, "open", args, kwargs)
 
     def _host_parent_for(self, method: str, args: tuple[Any, ...]) -> Any:
-        if method in ("open_settings", "open_editor") and args:
+        # open/open_settings/open_editor are wrapped on the class: args[0] is
+        # the AppWindowManager instance, which holds the central app.
+        if method in ("open", "open_settings", "open_editor") and args:
             return getattr(args[0], "central", None)
         if method in ("quit", "restart"):
             return args[0] if args else self.api._app if hasattr(self.api, "_app") else None
@@ -265,7 +284,7 @@ class Plugin(CW2Plugin):
             options = [{"key": method, "label": self._METHOD_LABELS[method]} for method in methods]
             status, value = self.window.choose(
                 "身份验证",
-                f"请选择一种验证方式以继续（{event}）：",
+                "请选择一种验证方式以继续：",  # 去掉了事件名
                 options,
             )
             if status != "ok" or not value:
@@ -296,7 +315,7 @@ class Plugin(CW2Plugin):
 
         entered = self.dialogs.password(
             "确保那是你",
-            f"验证你的身份以继续使用 Class Widgets。（{event}）",
+            "验证你的身份以继续使用 Class Widgets。",  # 去掉了事件名
             verifier=self.credentials.verify_password,
         )
         if entered is not None and self.credentials.verify_password(entered):
@@ -339,12 +358,27 @@ class Plugin(CW2Plugin):
     def remove_auth_method(self, method: str) -> bool:
         if method not in self.settings.data["auth_methods"]:
             return True
+
         remaining = [item for item in self.settings.data["auth_methods"] if item != method]
         if not remaining and any(self.settings.data["events"].values()):
             logger.warning("Refused to remove last authentication method while events are enabled")
             self.dialogs.notify("至少保留一种认证方式，或先关闭所有触发验证的事件。")
             return False
+
+        # 核心逻辑：移除前必须进行身份验证，防止被恶意篡改/移除
+        logger.info("Authentication required to remove auth method={}", method)
+        if not self.authenticate("remove_auth"):
+            logger.warning("Removal of authentication method={} cancelled or failed during verification", method)
+            return False
+
+        # 验证通过，执行移除
         self.settings.data["auth_methods"] = remaining
+
+        # 如果移除的是密码，彻底清空持久化的哈希和盐值
+        if method == "password":
+            self.settings.data["password_hash"] = ""
+            self.settings.data["password_salt"] = ""
+
         self.settings.save()
         logger.info("Removed authentication method={}", method)
         self._notify_state_changed()
@@ -385,10 +419,16 @@ class Plugin(CW2Plugin):
 
     @Slot(result=bool)
     def configure_password(self) -> bool:
+        # 如果已经存在任何认证方式，必须先通过现有认证才能更改/添加密码
+        if self.settings.data.get("auth_methods"):
+            if not self.authenticate("change_password"):
+                logger.warning("Password configuration cancelled during identity verification")
+                return False
+
         current = self.dialogs.password("设置验证密码", "请输入新密码：")
         if not current:
             return False
-        confirm = self.dialogs.confirm_password("确认验证密码", "请再次输入新密码：", first_value=current)
+        confirm = self.dialogs.confirm_password("好东西就要来了！", "请再次输入新密码以确认安全无虞。：", first_value=current)
         if confirm is None:
             logger.warning("Password setup confirmation cancelled")
             return False
@@ -396,7 +436,6 @@ class Plugin(CW2Plugin):
         self._enable_method("password")
         self.settings.save()
         logger.info("Password credential configured")
-        self.dialogs.notify("验证密码已保存。")
         self._notify_state_changed()
         return True
 

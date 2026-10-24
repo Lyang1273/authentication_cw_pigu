@@ -1,37 +1,58 @@
-import QtQuick 2.15
-import QtQuick.Layouts 2.15
+import QtQuick
+import QtQuick.Controls as QQC2
+import QtQuick.Layouts
 import RinUI
 
-Window {
+// 通知弹窗：居中普通窗口 + RinUI 主题外观（圆角、雾面背景、投影）。
+QQC2.Window {
     id: messageWindow
 
     modality: Qt.ApplicationModal
-    visible: false
-    title: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("确保那是你")
-    width: 360
-    height: 200
-    minimumWidth: 360
-    minimumHeight: 200
-    maximumWidth: 360
-    maximumHeight: 200
+    visible: true
+    title: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("身份验证")
+    width: 400
+    height: 220
+    minimumWidth: 400
+    minimumHeight: 220
+    maximumWidth: 400
+    maximumHeight: 220
+
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.currentTheme.colors.backgroundAcrylicColor
+        border.color: Theme.currentTheme.colors.windowBorderColor
+        border.width: 1
+        radius: Theme.currentTheme.appearance.windowRadius
+    }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
-        spacing: 12
+        spacing: 14
 
-        Icon {
-            name: "ic_fluent_info_20_regular"
-            size: 28
-            color: Theme.currentTheme.colors.textSecondaryColor
+        RowLayout {
+            Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
+            spacing: 10
+
+            Icon {
+                size: 24
+                name: "ic_fluent_info_20_filled"
+                color: Theme.currentTheme.colors.systemAttentionColor
+            }
+
+            Text {
+                typography: Typography.Title
+                text: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("身份验证")
+                verticalAlignment: Text.AlignVCenter
+            }
         }
 
-        Text {
+        Rectangle {
             Layout.fillWidth: true
-            typography: Typography.BodyStrong
-            text: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("确保那是你")
-            horizontalAlignment: Text.AlignHCenter
+            height: 1
+            color: Theme.currentTheme.colors.dividerBorderColor
         }
 
         Text {
@@ -40,11 +61,14 @@ Window {
             typography: Typography.Body
             text: typeof authPrompt !== "undefined" ? authPrompt : ""
             wrapMode: Text.WordWrap
-            verticalAlignment: Text.AlignTop
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignHCenter
+            color: Theme.currentTheme.colors.textSecondaryColor
         }
 
         Button {
             Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: 96
             text: typeof authSubmitLabel !== "undefined" ? authSubmitLabel : qsTr("确定")
             highlighted: true
             onClicked: authContext.cancel()

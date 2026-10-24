@@ -1,24 +1,25 @@
-﻿import QtQuick 2.15
-import QtQuick.Window as QQW
+import QtQuick
 import QtQuick.Controls as QQC2
-import QtQuick.Layouts 2.15
+import QtQuick.Layouts
+import QtQuick.Window as QQW
 import RinUI
 
-// Transparent carrier window so the RinUI Dialog and its dimmed overlay
-// cover the whole screen (host's CheckSingleInstanceDialog pattern).
-QQW.Window {
-    id: carrier
+// 透明全屏载体窗口：RinUI Dialog + 自绘变暗遮罩覆盖全屏
+// （宿主 CheckSingleInstanceDialog / ClassSwapRestoreDialog 同款模式）。
+QQW.Window {    id: carrier
     visible: true
     width: Screen.width
     height: Screen.height
     color: "transparent"
-    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.WA_TranslucentBackground
+    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
     modality: Qt.ApplicationModal
 
     property var choices: typeof authOptions !== "undefined" ? authOptions : []
+    // 图标由 Python 侧注入（authDialogIcon/authDialogIconColor）。
+    property string dialogIcon: typeof authDialogIcon !== "undefined" ? authDialogIcon : "ic_fluent_shield_keyhole_20_filled"
+    property string dialogIconColor: typeof authDialogIconColor !== "undefined" ? authDialogIconColor : ""
 
-    // RinUI Dialog 的 Overlay.modal 雾化遮罩在半透明窗口上不渲染，
-    // 因此这里自行绘制全屏变暗背景。
+    // 半透明窗口上 Dialog 自带的 Overlay.modal 不渲染，自行绘制全屏变暗背景。
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.55)
@@ -31,19 +32,35 @@ QQW.Window {
 
     Dialog {
         id: methodDialog
-        width: Screen.width * 0.22
-        title: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("确保那是你")
+        width: Math.max(360, Screen.width * 0.22)
+        title: typeof authTitle !== "undefined" && authTitle !== "" ? authTitle : qsTr("身份验证")
 
         QQC2.Overlay.modal: Rectangle {
             color: Qt.rgba(0, 0, 0, 0.55)
         }
 
-        Text {
+        // 图标 + 说明文案并排（宿主对话框同款布局）
+        RowLayout {
             Layout.fillWidth: true
-            typography: Typography.Body
-            text: typeof authPrompt !== "undefined" ? authPrompt : qsTr("请选择一种验证方式")
-            wrapMode: Text.WordWrap
-            color: Theme.currentTheme.colors.textSecondaryColor
+            spacing: 12
+
+            Icon {
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: 42
+                Layout.preferredHeight: 42
+                size: 42
+                name: carrier.dialogIcon
+                color: carrier.dialogIconColor !== ""
+                    ? carrier.dialogIconColor
+                    : Theme.currentTheme.colors.primaryColor
+            }
+            Text {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                typography: Typography.Body
+                text: typeof authPrompt !== "undefined" ? authPrompt : qsTr("请选择一种验证方式")
+                wrapMode: Text.WordWrap
+            }
         }
 
         Repeater {

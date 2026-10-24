@@ -6,15 +6,15 @@ window as unavailable so callers can cancel the interaction.
 """
 
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Any, Callable
+import os
+import sys
 
 try:
     from loguru import logger
 except ImportError:
     import logging
-
     logger = logging.getLogger("authentication")
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, Signal, Slot
@@ -38,7 +38,7 @@ class _AuthBridge(QObject):
     def __init__(self, verifier: Callable[[str], bool] | None, error_message: str | None):
         super().__init__()
         self.verifier = verifier
-        self.error_message = error_message or "验证失败，请检查后重试。"
+        self.error_message = error_message or "你输入的密码不匹配，请再试一次。"
         self.value: str | None = None
         self._loop: QEventLoop | None = None
 
@@ -64,6 +64,15 @@ class _AuthBridge(QObject):
     def cancel(self) -> None:
         self._quit()
 
+    @Slot()
+    def show_keyboard(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            os.system("start osk.exe")
+        except Exception as exc:
+            logger.error(f"Failed to launch osk.exe: {exc}")
+
     def _quit(self) -> None:
         loop = self._loop
         self._loop = None
@@ -86,23 +95,14 @@ class RinAuthWindow:
         verifier: Callable[[str], bool] | None = None,
         error: str | None = None,
     ) -> tuple[str, str | None]:
-        """Open the modal RinUI authentication window.
-
-        Returns ``(status, value)`` where status is one of
-        ``ok`` (value holds the password or None if cancelled),
-        ``verified`` (verifier succeeded, value holds the password),
-        or ``unavailable`` (RinUI window could not be shown).
-        """
         return self._run(self.qml_path, title, prompt, submit_label, verifier, error, overlay=True)
 
     def message(self, title: str, prompt: str) -> bool:
-        """Show a modal RinUI message window with a single OK button."""
         message_qml = self.qml_path.parent / "MessageWindow.qml"
         status, _ = self._run(message_qml, title, prompt, "确定", None, None)
         return status != "unavailable"
 
     def choose(self, title: str, prompt: str, options: list[dict[str, str]]) -> tuple[str, str | None]:
-        """Show a modal method chooser; returns (status, chosen key or None)."""
         chooser_qml = self.qml_path.parent / "MethodWindow.qml"
         normalized = [{"key": str(item.get("key", "")), "label": str(item.get("label", ""))} for item in options]
         return self._run(chooser_qml, title, prompt, "", None, None, {"authOptions": normalized}, overlay=True)
@@ -150,8 +150,6 @@ class RinAuthWindow:
             window.setProperty("title", title)
 
             if overlay:
-                # Cover the entire primary screen so host windows underneath
-                # cannot be interacted with during authentication.
                 window.showFullScreen()
             else:
                 screen = QApplication.primaryScreen()
