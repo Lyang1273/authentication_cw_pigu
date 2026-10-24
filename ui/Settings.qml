@@ -314,12 +314,5 @@ PluginPage {
                 }
             }
         }
-
-        InfoBar {
-            Layout.fillWidth: true
-            title: qsTr("认证说明")
-            text: qsTr("密码使用 PBKDF2-HMAC-SHA256 哈希保存。添加 Windows Hello 需要通过一次实时验证。")
-            severity: Severity.Info
-        }
     }
 }

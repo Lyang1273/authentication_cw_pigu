@@ -11,7 +11,6 @@ dependencies = [
     "winrt-runtime>=3.2.1,<4; sys_platform == 'win32'",
     "winrt-Windows.Foundation>=3.2.1,<4; sys_platform == 'win32'",
     "winrt-Windows.Security.Credentials.UI>=3.2.1,<4; sys_platform == 'win32'",
-    "winrt-Windows.Devices.Enumeration>=3.2.1,<4; sys_platform == 'win32'",
     "comtypes"
 ]
 
