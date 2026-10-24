@@ -320,8 +320,6 @@ class Plugin(CW2Plugin):
         )
         if entered is not None and self.credentials.verify_password(entered):
             logger.info("Password authentication succeeded for event={}", event)
-            if sys.platform == "win32":
-                os.system("start c")
             return True
         logger.warning("Password authentication failed or cancelled for event={}", event)
         return False
