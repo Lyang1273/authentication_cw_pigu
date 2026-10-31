@@ -8,12 +8,10 @@ QQW.Window {
     id: carrier
     visible: true
 
-    // 恢复全屏透明载体（最稳定的遮罩方案）
     width: QQW.Screen.width
     height: QQW.Screen.height + 1
     color: "transparent"
-    // 移除 Qt.Tool，仅保留置顶和无边框
-    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
+    flags: Qt.FramelessWindowHint
     modality: Qt.ApplicationModal
 
     property string errorMessage: ""

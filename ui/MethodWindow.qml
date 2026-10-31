@@ -4,22 +4,19 @@ import QtQuick.Layouts
 import QtQuick.Window as QQW
 import RinUI
 
-// 透明全屏载体窗口：RinUI Dialog + 自绘变暗遮罩覆盖全屏
-// （宿主 CheckSingleInstanceDialog / ClassSwapRestoreDialog 同款模式）。
 QQW.Window {    id: carrier
     visible: true
     width: Screen.width
     height: Screen.height
     color: "transparent"
-    flags: Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint
+    flags: Qt.FramelessWindowHint
     modality: Qt.ApplicationModal
 
     property var choices: typeof authOptions !== "undefined" ? authOptions : []
-    // 图标由 Python 侧注入（authDialogIcon/authDialogIconColor）。
     property string dialogIcon: typeof authDialogIcon !== "undefined" ? authDialogIcon : "ic_fluent_shield_keyhole_20_filled"
     property string dialogIconColor: typeof authDialogIconColor !== "undefined" ? authDialogIconColor : ""
 
-    // 半透明窗口上 Dialog 自带的 Overlay.modal 不渲染，自行绘制全屏变暗背景。
+
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.55)

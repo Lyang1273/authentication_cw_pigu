@@ -284,8 +284,9 @@ class Plugin(CW2Plugin):
             options = [{"key": method, "label": self._METHOD_LABELS[method]} for method in methods]
             status, value = self.window.choose(
                 "身份验证",
-                "请选择一种验证方式以继续：",  # 去掉了事件名
+                "请选择一种验证方式以继续：",
                 options,
+                parent=self.dialogs.parent_provider(),
             )
             if status != "ok" or not value:
                 logger.debug("Method selection cancelled for event={}", event)
@@ -315,7 +316,7 @@ class Plugin(CW2Plugin):
 
         entered = self.dialogs.password(
             "确保那是你",
-            "验证你的身份以继续使用 Class Widgets。",  # 去掉了事件名
+            "验证你的身份以继续使用 Class Widgets。",
             verifier=self.credentials.verify_password,
         )
         if entered is not None and self.credentials.verify_password(entered):

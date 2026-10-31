@@ -18,6 +18,7 @@ except ImportError:
     logger = logging.getLogger("authentication")
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, Signal, Slot
+from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import QApplication
 
 
@@ -28,6 +29,23 @@ def _rinui_ready() -> bool:
         return True
     except Exception:
         return False
+
+
+def _resolve_qwindow(obj: Any) -> QWindow | None:
+    """Turn a QWidget / QWindow / None into a QWindow suitable for setTransientParent."""
+    if obj is None:
+        return None
+    try:
+        if isinstance(obj, QWindow):
+            return obj
+        getter = getattr(obj, "windowHandle", None)
+        if callable(getter):
+            handle = getter()
+            if isinstance(handle, QWindow):
+                return handle
+    except Exception:
+        logger.debug("Failed to resolve QWindow from parent object", exc_info=True)
+    return None
 
 
 class _AuthBridge(QObject):
@@ -94,18 +112,36 @@ class RinAuthWindow:
         submit_label: str = "确定",
         verifier: Callable[[str], bool] | None = None,
         error: str | None = None,
+        parent: Any = None,
     ) -> tuple[str, str | None]:
-        return self._run(self.qml_path, title, prompt, submit_label, verifier, error, overlay=True)
+        return self._run(
+            self.qml_path, title, prompt, submit_label, verifier, error,
+            overlay=True, parent=parent,
+        )
 
-    def message(self, title: str, prompt: str) -> bool:
+    def message(self, title: str, prompt: str, parent: Any = None) -> bool:
         message_qml = self.qml_path.parent / "MessageWindow.qml"
-        status, _ = self._run(message_qml, title, prompt, "确定", None, None)
+        status, _ = self._run(
+            message_qml, title, prompt, "确定", None, None, parent=parent,
+        )
         return status != "unavailable"
 
-    def choose(self, title: str, prompt: str, options: list[dict[str, str]]) -> tuple[str, str | None]:
+    def choose(
+        self,
+        title: str,
+        prompt: str,
+        options: list[dict[str, str]],
+        parent: Any = None,
+    ) -> tuple[str, str | None]:
         chooser_qml = self.qml_path.parent / "MethodWindow.qml"
-        normalized = [{"key": str(item.get("key", "")), "label": str(item.get("label", ""))} for item in options]
-        return self._run(chooser_qml, title, prompt, "", None, None, {"authOptions": normalized}, overlay=True)
+        normalized = [
+            {"key": str(item.get("key", "")), "label": str(item.get("label", ""))}
+            for item in options
+        ]
+        return self._run(
+            chooser_qml, title, prompt, "", None, None,
+            {"authOptions": normalized}, overlay=True, parent=parent,
+        )
 
     def _run(
         self,
@@ -117,6 +153,7 @@ class RinAuthWindow:
         error: str | None,
         extra: dict[str, Any] | None = None,
         overlay: bool = False,
+        parent: Any = None,
     ) -> tuple[str, str | None]:
         self.last_error = None
         if not qml_path.exists() or not _rinui_ready():
@@ -149,6 +186,16 @@ class RinAuthWindow:
                 raise RuntimeError("RinUI window failed to load")
             window.setProperty("title", title)
 
+            # 关键：绑定 transient parent，靠父子关系浮在主窗口之上，
+            # 而不是设置 WS_EX_TOPMOST。UIAccess 进程里 topmost 窗口会进入
+            # ZBID_UIACCESS 段，transient child 不会。
+            parent_window = _resolve_qwindow(parent)
+            if parent_window is not None:
+                try:
+                    window.setTransientParent(parent_window)
+                except Exception:
+                    logger.debug("setTransientParent failed", exc_info=True)
+
             if overlay:
                 window.showFullScreen()
             else:
@@ -158,6 +205,7 @@ class RinAuthWindow:
                     window.setX(geometry.center().x() - window.width() // 2)
                     window.setY(geometry.center().y() - window.height() // 2)
                 window.show()
+
 
             loop = QEventLoop()
             bridge._loop = loop

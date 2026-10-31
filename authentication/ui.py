@@ -37,6 +37,7 @@ class AuthDialogs:
                 submit_label="验证" if verifier is not None else "确定",
                 verifier=verifier,
                 error=error,
+                parent=self.parent_provider(),
             )
         except Exception:
             logger.exception("RinUI authentication window raised unexpectedly")
@@ -61,7 +62,7 @@ class AuthDialogs:
             logger.warning("RinUI authentication window not initialized; {} : {}", title, message)
             return
         try:
-            shown = self._rin_window.message(title, message)
+            shown = self._rin_window.message(title, message, parent=self.parent_provider())
         except Exception:
             logger.exception("RinUI message window raised unexpectedly")
             shown = False
