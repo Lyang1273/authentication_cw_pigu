@@ -1,7 +1,7 @@
 {
   "id": "authentication.lyang1273",
   "name": "Authentication",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api_version": ">=0.5.0",
   "entry": "main.py",
   "author": "Lyang1273",
